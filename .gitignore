@@ -1,0 +1,14 @@
+# Environment
+.env
+venv/
+.spotipy_cache
+.DS_Store
+
+# Databases
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class

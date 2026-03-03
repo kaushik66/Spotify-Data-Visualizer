@@ -23,54 +23,81 @@ def get_spotify_client():
     )
     return spotipy.Spotify(auth_manager=auth_manager)
 
-def enrich_audio_features(sp, cursor, conn):
-    """Fetches missing audio features in batches of 100."""
-    print("--- Starting Audio Feature Enrichment ---")
+def sync_recently_played(sp, cursor, conn):
+    """Fetches the 50 most recently played tracks and syncs to DB."""
+    print("--- Starting Recently Played Sync ---")
     
-    # 1. Find tracks missing audio features
-    cursor.execute('SELECT track_uri FROM tracks WHERE tempo IS NULL')
-    missing_tracks = [row[0] for row in cursor.fetchall()]
-    
-    total_missing = len(missing_tracks)
-    print(f"Found {total_missing} tracks needing audio features.")
-    
-    if total_missing == 0:
-        return
+    try:
+        results = sp.current_user_recently_played(limit=50)
+        items = results.get('items', [])
+        
+        if not items:
+            print("No recently played tracks found.")
+            return
 
-    # Spotify API limits audio-features array to 100 IDs per request
-    batch_size = 100
-    processed_count = 0
-
-    for i in range(0, total_missing, batch_size):
-        batch_uris = missing_tracks[i:i + batch_size]
-        # Spotipy's audio_features takes fully qualified URIs or IDs
-        try:
-            features_data = sp.audio_features(tracks=batch_uris)
+        print(f"Fetched {len(items)} recently played tracks from Spotify.")
+        
+        new_sessions = 0
+        new_tracks = 0
+        
+        for item in reversed(items): # Process oldest to newest
+            track = item.get('track')
+            if not track: continue
             
-            for feature in features_data:
-                if feature is None:
-                    continue # Track might not have features available
-                    
-                uri = feature['uri']
+            track_uri = track.get('uri')
+            played_at_str = item.get('played_at')
+            
+            # Format date from ISO 8601 to SQLite format
+            from datetime import datetime
+            try:
+                # API returns e.g. '2026-02-27T14:32:10.000Z'
+                # Strip fractional seconds and Z for parsing if necessary, or use fromisoformat
+                dt = datetime.strptime(played_at_str[:19], "%Y-%m-%dT%H:%M:%S")
+                played_at = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception as e:
+                print(f"Error parsing date {played_at_str}: {e}")
+                continue
+                
+            # 1. Ensure Track Exists in tracks table
+            cursor.execute('SELECT track_uri FROM tracks WHERE track_uri = ?', (track_uri,))
+            if not cursor.fetchone():
                 cursor.execute('''
-                    UPDATE tracks
-                    SET tempo = ?, valence = ?, energy = ?, danceability = ?, 
-                        acousticness = ?, instrumentalness = ?, liveness = ?, speechiness = ?
-                    WHERE track_uri = ?
+                    INSERT INTO tracks (track_uri, track_name, artist_name, album_name)
+                    VALUES (?, ?, ?, ?)
                 ''', (
-                    feature['tempo'], feature['valence'], feature['energy'],
-                    feature['danceability'], feature['acousticness'], feature['instrumentalness'],
-                    feature['liveness'], feature['speechiness'], uri
+                    track_uri,
+                    track.get('name'),
+                    track['artists'][0]['name'] if track.get('artists') else 'Unknown',
+                    track['album']['name'] if track.get('album') else 'Unknown'
                 ))
-            
-            conn.commit()
-            processed_count += len(batch_uris)
-            print(f"Processed {processed_count}/{total_missing} tracks...")
-            
-        except Exception as e:
-            print(f"Error fetching batch: {e}")
-            
-    print("Enrichment complete.")
+                new_tracks += 1
+                
+            # 2. Add Session if not already present
+            cursor.execute('SELECT id FROM streaming_history WHERE track_uri = ? AND played_at = ?', (track_uri, played_at))
+            if not cursor.fetchone():
+                # We don't get ms_played dynamically from this endpoint unfortunately, so we store duration
+                ms_played = track.get('duration_ms', 0) 
+                
+                cursor.execute('''
+                    INSERT INTO streaming_history (
+                        played_at, ms_played, track_uri, platform, reason_start, reason_end
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    played_at,
+                    ms_played,
+                    track_uri,
+                    'Spotify API Sync',
+                    'api',
+                    'api'
+                ))
+                new_sessions += 1
+                
+        conn.commit()
+        print(f"Sync complete. Added {new_sessions} new listening sessions and {new_tracks} new tracks.")
+        
+    except Exception as e:
+        print(f"Error fetching recently played data: {e}")
 
 def main():
     if not os.path.exists(DB_PATH):
@@ -94,8 +121,8 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Run the Enrichment Engine
-    enrich_audio_features(sp, cursor, conn)
+    # Run the Sync Engine
+    sync_recently_played(sp, cursor, conn)
     
     conn.close()
 
