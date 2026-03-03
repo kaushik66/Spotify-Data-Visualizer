@@ -1,30 +1,24 @@
 "use client";
 
 import { motion, Variants } from "framer-motion";
-import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { Disc, Play, Sparkles, MessageCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Disc, Clock, MessageCircle } from "lucide-react";
+import Image from "next/image";
 import HeroLeaderLayout from "@/components/HeroLeaderLayout";
-import { getTopArtists, getTopTracks, SpotifyItem } from "@/app/actions/spotify";
+import { getTopArtists, getTopTracks, getTopAlbums, RecentTrack, SpotifyItem } from "@/app/actions/spotify";
 
 interface DashboardClientProps {
   lastListened?: { track_name: string; artist_name: string; played_at: string };
   liveTopArtists: SpotifyItem[];
   liveTopTracks: SpotifyItem[];
-  topAlbums: { album_name: string; artist_name: string; plays: number }[];
-  topGenres: { genres: string; plays: number }[];
-  trends: { date: string; count: number }[];
+  liveTopAlbums: SpotifyItem[];
+  recentlyPlayed: RecentTrack[];
 }
 
-export default function DashboardClient({ lastListened, liveTopArtists, liveTopTracks, topAlbums, topGenres, trends }: DashboardClientProps) {
+export default function DashboardClient({ lastListened, liveTopArtists, liveTopTracks, liveTopAlbums, recentlyPlayed }: DashboardClientProps) {
   
-  // Animation variants
   const container: Variants = {
     hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1 }
-    }
+    show: { opacity: 1, transition: { staggerChildren: 0.1 } }
   };
 
   const item: Variants = {
@@ -60,43 +54,56 @@ export default function DashboardClient({ lastListened, liveTopArtists, liveTopT
         )}
       </motion.div>
 
-      {/* Listening Trends Area Chart */}
-      <motion.div variants={item} className="md:col-span-2 glass-panel p-6 flex flex-col gap-4">
+      {/* Recently Played — horizontal strip, newest on the left */}
+      <motion.div variants={item} className="md:col-span-2 glass-panel p-6 flex flex-col gap-5">
         <div className="flex items-center gap-2 text-indigo-200">
-          <Play className="w-5 h-5 opacity-80" />
-          <h2 className="text-sm font-medium uppercase tracking-widest opacity-80">Listening Flow (14 Days)</h2>
+          <Clock className="w-5 h-5 opacity-80" />
+          <h2 className="text-sm font-medium uppercase tracking-widest opacity-80">Recently Played</h2>
         </div>
-        
-        <div className="h-48 w-full mt-2">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trends} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#818cf8" stopOpacity={0.4}/>
-                  <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <Tooltip 
-                contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', backdropFilter: 'blur(10px)' }}
-                itemStyle={{ color: '#e2e8f0' }}
-                labelStyle={{ color: '#94a3b8' }}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="count" 
-                stroke="#818cf8" 
-                strokeWidth={3}
-                fillOpacity={1} 
-                fill="url(#colorCount)" 
-                animationDuration={1500}
-                animationEasing="ease-in-out"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+
+        <div className="flex flex-row gap-4 items-start w-full overflow-hidden">
+          {recentlyPlayed.map((track, i) => (
+            <motion.div
+              key={track.id}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.07, type: "spring", stiffness: 300, damping: 24 }}
+              className="flex flex-col items-center flex-1 min-w-0 group cursor-default"
+            >
+              {/* Album Art */}
+              <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-white/10 shadow-lg bg-indigo-950/40 group-hover:border-indigo-400/40 transition-colors group-hover:shadow-[0_0_20px_rgba(99,102,241,0.25)]">
+                {track.imageUrl ? (
+                  <Image
+                    src={track.imageUrl}
+                    alt={track.track_name}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                    sizes="20vw"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Disc className="w-8 h-8 text-indigo-400/40 animate-spin-slow" />
+                  </div>
+                )}
+                {/* Position badge — newest = 1 */}
+                {i === 0 && (
+                  <div className="absolute top-1.5 left-1.5 bg-indigo-500/80 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md">
+                    Latest
+                  </div>
+                )}
+              </div>
+
+              {/* Track info */}
+              <div className="mt-2 w-full text-center px-0.5">
+                <p className="text-xs font-semibold text-white/90 truncate leading-tight">{track.track_name}</p>
+                <p className="text-[10px] text-indigo-300/60 uppercase tracking-wider truncate mt-0.5">{track.artist_name}</p>
+              </div>
+            </motion.div>
+          ))}
         </div>
       </motion.div>
 
-      {/* Live Hero Layouts (Artists & Tracks) */}
+      {/* Top Artists */}
       <motion.div variants={item} className="md:col-span-3">
          <HeroLeaderLayout 
            title="Top Artists" 
@@ -105,6 +112,7 @@ export default function DashboardClient({ lastListened, liveTopArtists, liveTopT
          />
       </motion.div>
 
+      {/* Top Tracks */}
       <motion.div variants={item} className="md:col-span-3">
          <HeroLeaderLayout 
            title="Top Tracks" 
@@ -113,48 +121,16 @@ export default function DashboardClient({ lastListened, liveTopArtists, liveTopT
          />
       </motion.div>
 
-      {/* Database Extras */}
-
-      {/* Top Albums & Genres Column */}
-      <motion.div variants={item} className="md:col-span-1 flex flex-col gap-6">
-        <div className="glass-panel p-6 flex flex-col gap-4 flex-1">
-           <h2 className="text-sm font-medium uppercase tracking-widest text-indigo-200 opacity-80">Top Albums</h2>
-           <div className="flex flex-col gap-3 mt-2">
-            {topAlbums.map((album, i) => (
-              <div key={i} className="flex flex-col bg-white/5 p-3 rounded-lg border border-white/5 hover:bg-white/10 transition-colors">
-                <span className="text-sm text-white font-medium truncate">{album.album_name}</span>
-                <div className="flex justify-between items-center mt-1">
-                  <span className="text-xs text-indigo-200/60 truncate">{album.artist_name}</span>
-                  <span className="text-xs font-mono text-indigo-300">{album.plays}x</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </motion.div>
-      
-       <motion.div variants={item} className="md:col-span-1 flex flex-col gap-6">
-        {/* Vibe Map / Proxy Card */}
-        <div className="glass-panel p-6 flex flex-col items-center justify-center text-center gap-3 relative overflow-hidden group flex-1">
-          <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-          <Sparkles className="w-10 h-10 text-purple-300 opacity-80 mb-2" />
-          <h3 className="text-xl font-semibold text-white">Vibe Analysis</h3>
-          <p className="text-indigo-200/70 text-sm px-2">
-            Sonic fingerprinting is currently calibrating via advanced LLM models.
-          </p>
-        </div>
-        
-        {/* Top Genres Backup card if needed */}
-         {topGenres && topGenres.length > 0 && (
-           <div className="glass-panel p-6 flex flex-col gap-4">
-             <h2 className="text-sm font-medium uppercase tracking-widest text-indigo-200 opacity-80">Top Genres</h2>
-              {/* Dynamic rendering of genres if db allows in future*/}
-           </div>
-         )}
+      {/* Top Albums — same Hero-Leader style */}
+      <motion.div variants={item} className="md:col-span-3">
+         <HeroLeaderLayout 
+           title="Top Albums" 
+           initialItems={liveTopAlbums} 
+           fetchAction={getTopAlbums} 
+         />
       </motion.div>
 
-      
-      {/* Floating AI Assistant Chat Placeholder */}
+      {/* Floating AI Assistant Chat */}
       <motion.div variants={item} className="md:col-span-3 mt-4">
         <div className="glass-panel p-4 flex items-center gap-4 hover:bg-white/10 transition-colors cursor-text group shadow-lg shadow-indigo-500/5">
           <MessageCircle className="w-6 h-6 text-indigo-300 group-hover:text-indigo-200 transition-colors" />
@@ -170,3 +146,5 @@ export default function DashboardClient({ lastListened, liveTopArtists, liveTopT
     </motion.div>
   );
 }
+
+

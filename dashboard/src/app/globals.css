@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0f172a;
-  --foreground: #f8fafc;
+  --background: #050505;
+  --foreground: #fdf2f8;
 }
 
 @theme inline {
@@ -20,7 +20,7 @@ body {
   min-height: 100vh;
 }
 
-/* Custom scrollbar for horizontal sections */
+/* Custom scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
   height: 6px;
 }
@@ -29,29 +29,32 @@ body {
   border-radius: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(236, 72, 153, 0.25);
   border-radius: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(236, 72, 153, 0.45);
 }
 
 @keyframes liquid-mesh {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+  0%   { background-position: 0% 50%;   }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%;   }
 }
 
+/* Black & Pink liquid mesh background */
 .liquid-bg {
-  background: linear-gradient(-45deg, #0f172a, #2e1065, #312e81, #172554);
-  background-size: 400% 400%;
-  animation: liquid-mesh 15s ease infinite;
+  background: linear-gradient(
+    -45deg,
+    #050505,
+    #1a0010,
+    #3b0022,
+    #0a0a0a,
+    #2d0018,
+    #050505
+  );
+  background-size: 600% 600%;
+  animation: liquid-mesh 18s ease infinite;
   min-height: 100vh;
   width: 100%;
   position: fixed;
@@ -60,10 +63,14 @@ body {
   z-index: -1;
 }
 
+/* Liquid glass panel — black glass with pink tint */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(10, 0, 6, 0.55);
+  border: 1px solid rgba(236, 72, 153, 0.18);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   border-radius: 1.5rem;
+  box-shadow: 0 0 0 1px rgba(236, 72, 153, 0.06) inset,
+              0 4px 32px rgba(0, 0, 0, 0.6);
 }
+

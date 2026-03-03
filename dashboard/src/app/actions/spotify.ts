@@ -62,9 +62,9 @@ export async function getTopArtists(timeRange: TimeRange = 'short_term'): Promis
       let imageUrl = '';
       if (token) {
         try {
-          const res = await fetch(`https://api.spotify.com/v1/search?q=artist:${encodeURIComponent(row.name)}&type=artist&limit=1`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          // Try strict field-qualified search first
+          let searchUrl = `https://api.spotify.com/v1/search?q=artist:${encodeURIComponent(row.name)}&type=artist&limit=1`;
+          let res = await fetch(searchUrl, { headers: { Authorization: `Bearer ${token}` } });
           if (res.ok) {
             const data = await res.json();
             const artistItem = data.artists?.items?.[0];
@@ -72,13 +72,27 @@ export async function getTopArtists(timeRange: TimeRange = 'short_term'): Promis
               imageUrl = artistItem.images.length > 1 ? artistItem.images[1].url : artistItem.images[0].url;
             }
           }
+          // Fallback: plain text search if strict query returned no image
+          if (!imageUrl) {
+            const fallbackRes = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(row.name)}&type=artist&limit=1`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (fallbackRes.ok) {
+              const fallbackData = await fallbackRes.json();
+              const fallbackItem = fallbackData.artists?.items?.[0];
+              if (fallbackItem?.images?.length) {
+                imageUrl = fallbackItem.images.length > 1 ? fallbackItem.images[1].url : fallbackItem.images[0].url;
+              }
+            }
+          }
+          if (!imageUrl) console.warn(`[TopArtists] No image found for: ${row.name}`);
         } catch (e) {
           console.error("Failed to fetch artist image:", e);
         }
       }
 
       return {
-        id: `local-artist-${index}`,
+        id: `artist-${row.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
         name: row.name,
         imageUrl
       };
@@ -121,6 +135,21 @@ export async function getTopTracks(timeRange: TimeRange = 'short_term'): Promise
               imageUrl = data.album.images.length > 1 ? data.album.images[1].url : data.album.images[0].url;
             }
           }
+          // Fallback: track ID invalid (e.g. 400) — search by name + artist instead
+          if (!imageUrl) {
+            const q = encodeURIComponent(`track:${row.name} artist:${row.artist}`);
+            const searchRes = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const foundTrack = searchData.tracks?.items?.[0];
+              if (foundTrack?.album?.images?.length) {
+                imageUrl = foundTrack.album.images.length > 1 ? foundTrack.album.images[1].url : foundTrack.album.images[0].url;
+              }
+            }
+          }
+          if (!imageUrl) console.warn(`[TopTracks] No image found for: ${row.name} by ${row.artist}`);
         } catch (e) {
           console.error("Failed to fetch track image:", e);
         }
@@ -136,4 +165,140 @@ export async function getTopTracks(timeRange: TimeRange = 'short_term'): Promise
   );
 
   return enrichedTracks;
+}
+
+export async function getTopAlbums(timeRange: TimeRange = 'short_term'): Promise<SpotifyItem[]> {
+  const token = getAccessToken();
+  const dateThreshold = getDateThreshold(timeRange);
+
+  // 1. Get Top Albums locally by actual listening time
+  const topLocalAlbums = db.prepare(`
+    SELECT t.album_name as name, t.artist_name as artist, CAST(SUM(s.ms_played) AS INTEGER) as total_ms
+    FROM streaming_history s
+    JOIN tracks t ON s.track_uri = t.track_uri
+    WHERE s.played_at >= ?
+      AND t.album_name IS NOT NULL
+      AND t.album_name != 'Unknown Album'
+      AND t.album_name != ''
+    GROUP BY t.album_name
+    ORDER BY total_ms DESC
+    LIMIT 10
+  `).all(dateThreshold) as { name: string; artist: string; total_ms: number }[];
+
+  // 2. Fetch album images from Spotify Search
+  const enrichedAlbums = await Promise.all(
+    topLocalAlbums.map(async (row) => {
+      let imageUrl = '';
+      if (token) {
+        try {
+          // Try strict field-qualified search first
+          const q = encodeURIComponent(`album:${row.name} artist:${row.artist}`);
+          const res = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=album&limit=1`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const albumItem = data.albums?.items?.[0];
+            if (albumItem?.images?.length) {
+              imageUrl = albumItem.images.length > 1 ? albumItem.images[1].url : albumItem.images[0].url;
+            }
+          }
+          // Fallback: plain text search
+          if (!imageUrl) {
+            const fallbackRes = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(row.name)}&type=album&limit=1`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (fallbackRes.ok) {
+              const fallbackData = await fallbackRes.json();
+              const fallbackItem = fallbackData.albums?.items?.[0];
+              if (fallbackItem?.images?.length) {
+                imageUrl = fallbackItem.images.length > 1 ? fallbackItem.images[1].url : fallbackItem.images[0].url;
+              }
+            }
+          }
+          if (!imageUrl) console.warn(`[TopAlbums] No image found for: ${row.name} by ${row.artist}`);
+        } catch (e) {
+          console.error('Failed to fetch album image:', e);
+        }
+      }
+
+      return {
+        id: `album-${row.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+        name: row.name,
+        artist: row.artist,
+        imageUrl
+      };
+    })
+  );
+
+  return enrichedAlbums;
+}
+
+export interface RecentTrack {
+  id: string;
+  track_name: string;
+  artist_name: string;
+  played_at: string;
+  imageUrl: string;
+}
+
+export async function getRecentlyPlayed(limit = 5): Promise<RecentTrack[]> {
+  const token = getAccessToken();
+
+  // 1. Get most recently played from local DB
+  const recentRows = db.prepare(`
+    SELECT t.track_name, t.artist_name, t.track_uri, s.played_at
+    FROM streaming_history s
+    JOIN tracks t ON s.track_uri = t.track_uri
+    ORDER BY s.played_at DESC
+    LIMIT ?
+  `).all(limit) as { track_name: string; artist_name: string; track_uri: string; played_at: string }[];
+
+  // 2. Enrich with album art
+  const enriched = await Promise.all(
+    recentRows.map(async (row, index) => {
+      let imageUrl = '';
+      const trackId = row.track_uri?.split(':').pop();
+
+      if (token && trackId) {
+        try {
+          const res = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.album?.images?.length) {
+              imageUrl = data.album.images.length > 1 ? data.album.images[1].url : data.album.images[0].url;
+            }
+          }
+          // Fallback: search by name + artist
+          if (!imageUrl) {
+            const q = encodeURIComponent(`track:${row.track_name} artist:${row.artist_name}`);
+            const searchRes = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (searchRes.ok) {
+              const sd = await searchRes.json();
+              const found = sd.tracks?.items?.[0];
+              if (found?.album?.images?.length) {
+                imageUrl = found.album.images.length > 1 ? found.album.images[1].url : found.album.images[0].url;
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch recent track image:', e);
+        }
+      }
+
+      return {
+        id: `recent-${index}-${trackId || row.track_name}`,
+        track_name: row.track_name,
+        artist_name: row.artist_name,
+        played_at: row.played_at,
+        imageUrl
+      };
+    })
+  );
+
+  return enriched;
 }

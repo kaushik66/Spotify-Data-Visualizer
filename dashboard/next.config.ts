@@ -6,8 +6,22 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'i.scdn.co',
-        port: '',
-        pathname: '/image/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'mosaic.scdn.co',
+      },
+      {
+        protocol: 'https',
+        hostname: 'image-cdn-ak.spotifycdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'image-cdn-fa.spotifycdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.spotifycdn.com',
       },
     ],
   },
