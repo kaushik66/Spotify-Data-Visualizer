@@ -11,7 +11,7 @@ load_dotenv()
 # Configuration
 DB_PATH = 'spotify_intelligence.db'
 # You will need to create a .env file with SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, and SPOTIPY_REDIRECT_URI
-SCOPE = "user-read-recently-played"
+SCOPE = "user-read-recently-played user-top-read"
 
 def get_spotify_client():
     """Initializes and returns the Spotipy client with OAuth."""
