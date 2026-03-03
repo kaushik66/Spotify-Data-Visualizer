@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { db } from '../../lib/db';
 
 export type TimeRange = 'short_term' | 'medium_term' | 'long_term';
 
@@ -28,49 +29,111 @@ function getAccessToken(): string | null {
   }
 }
 
+function getDateThreshold(timeRange: TimeRange): string {
+  const d = new Date();
+  if (timeRange === 'short_term') {
+    d.setMonth(d.getMonth() - 1); // 4 Weeks
+  } else if (timeRange === 'medium_term') {
+    d.setMonth(d.getMonth() - 6); // 6 Months
+  } else {
+    d.setFullYear(d.getFullYear() - 20); // All time (or effectively 20 years back)
+  }
+  return d.toISOString();
+}
+
 export async function getTopArtists(timeRange: TimeRange = 'short_term'): Promise<SpotifyItem[]> {
   const token = getAccessToken();
-  if (!token) return [];
+  const dateThreshold = getDateThreshold(timeRange);
 
-  const res = await fetch(`https://api.spotify.com/v1/me/top/artists?time_range=${timeRange}&limit=10`, {
-    headers: { Authorization: `Bearer ${token}` },
-    next: { revalidate: 0 } // Live fetches, but we can cache if needed
-  });
+  // 1. Get Top Artists locally by actual listening time 
+  const topLocalArtists = db.prepare(`
+    SELECT t.artist_name as name, CAST(SUM(s.ms_played) AS INTEGER) as total_ms
+    FROM streaming_history s
+    JOIN tracks t ON s.track_uri = t.track_uri
+    WHERE s.played_at >= ?
+    GROUP BY t.artist_name
+    ORDER BY total_ms DESC
+    LIMIT 10
+  `).all(dateThreshold) as { name: string; total_ms: number }[];
 
-  if (!res.ok) {
-    console.error(`Failed to fetch top artists (${res.status})`, await res.text());
-    return [];
-  }
+  // 2. Fetch images for these specific artists from Spotify
+  const enrichedArtists = await Promise.all(
+    topLocalArtists.map(async (row, index) => {
+      let imageUrl = '';
+      if (token) {
+        try {
+          const res = await fetch(`https://api.spotify.com/v1/search?q=artist:${encodeURIComponent(row.name)}&type=artist&limit=1`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const artistItem = data.artists?.items?.[0];
+            if (artistItem?.images?.length) {
+              imageUrl = artistItem.images.length > 1 ? artistItem.images[1].url : artistItem.images[0].url;
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch artist image:", e);
+        }
+      }
 
-  const data = await res.json();
-  return data.items.map((artist: any) => ({
-    id: artist.id,
-    name: artist.name,
-    // [1] is medium size if available, fallback to [0]
-    imageUrl: artist.images?.length > 1 ? artist.images[1].url : (artist.images?.[0]?.url || '')
-  }));
+      return {
+        id: `local-artist-${index}`,
+        name: row.name,
+        imageUrl
+      };
+    })
+  );
+
+  return enrichedArtists;
 }
 
 export async function getTopTracks(timeRange: TimeRange = 'short_term'): Promise<SpotifyItem[]> {
   const token = getAccessToken();
-  if (!token) return [];
+  const dateThreshold = getDateThreshold(timeRange);
 
-  const res = await fetch(`https://api.spotify.com/v1/me/top/tracks?time_range=${timeRange}&limit=10`, {
-    headers: { Authorization: `Bearer ${token}` },
-    next: { revalidate: 0 }
-  });
+  // 1. Get Top Tracks locally by actual listening time 
+  const topLocalTracks = db.prepare(`
+    SELECT t.track_name as name, t.artist_name as artist, t.track_uri as uri, CAST(SUM(s.ms_played) AS INTEGER) as total_ms
+    FROM streaming_history s
+    JOIN tracks t ON s.track_uri = t.track_uri
+    WHERE s.played_at >= ?
+    GROUP BY t.track_uri
+    ORDER BY total_ms DESC
+    LIMIT 10
+  `).all(dateThreshold) as { name: string; artist: string; uri: string; total_ms: number }[];
 
-  if (!res.ok) {
-    console.error(`Failed to fetch top tracks (${res.status})`, await res.text());
-    return [];
-  }
+  // 2. Fetch images using their Spotify IDs directly
+  const enrichedTracks = await Promise.all(
+    topLocalTracks.map(async (row, index) => {
+      let imageUrl = '';
+      // Ex: "spotify:track:4jD9..." -> "4jD9..."
+      const trackId = row.uri?.split(':').pop();
 
-  const data = await res.json();
-  return data.items.map((track: any) => ({
-    id: track.id,
-    name: track.name,
-    artist: track.artists?.[0]?.name || 'Unknown',
-    // [1] is medium size if available, fallback to [0]
-    imageUrl: track.album?.images?.length > 1 ? track.album.images[1].url : (track.album?.images?.[0]?.url || '')
-  }));
+      if (token && trackId) {
+        try {
+          const res = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.album?.images?.length) {
+              imageUrl = data.album.images.length > 1 ? data.album.images[1].url : data.album.images[0].url;
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch track image:", e);
+        }
+      }
+
+      return {
+        id: trackId || `local-track-${index}`,
+        name: row.name,
+        artist: row.artist,
+        imageUrl
+      };
+    })
+  );
+
+  return enrichedTracks;
 }

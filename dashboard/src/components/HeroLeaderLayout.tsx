@@ -85,10 +85,10 @@ export default function HeroLeaderLayout({ title, initialItems, fetchAction }: H
       {(!hero && !error) && <div className="text-white/50 text-sm">Waiting for live data sync...</div>}
 
       {hero && !error && (
-        <div className="flex flex-col md:flex-row gap-8 items-center md:items-start w-full min-h-[220px] mt-2 z-10">
+        <div className="flex flex-col md:flex-row gap-8 items-center md:items-start w-full min-h-[300px] mt-2 z-10">
           
           {/* THE HERO (#1 RANK) */}
-          <div className="flex-shrink-0 flex items-center justify-center relative w-48 h-48 md:w-56 md:h-56">
+          <div className="flex-shrink-0 flex items-center justify-center relative w-48 h-48 md:w-56 md:h-56 mt-4 md:mt-8">
              <div className="absolute inset-0 bg-indigo-400/30 rounded-full blur-[40px] animate-pulse pointer-events-none" />
              <motion.div 
                layoutId={`image-${hero.id}-${title}`}
@@ -121,43 +121,57 @@ export default function HeroLeaderLayout({ title, initialItems, fetchAction }: H
              </div>
           </div>
 
-          {/* THE FOLLOWERS (#2 - 10 Snap Scroll) */}
-          <div className="flex-1 w-full overflow-x-auto overflow-y-visible snap-x snap-mandatory flex gap-6 pb-8 pt-6 px-4 custom-scrollbar items-start [mask-image:linear-gradient(to_right,transparent,white_5%,white_90%,transparent)]">
-            <AnimatePresence>
-              {followers.map((item, index) => (
-                <motion.div
-                  key={item.id}
-                  layoutId={`${item.id}-${title}`} // Full container layout
-                  initial={{ opacity: 0, scale: 0.8, x: 20 }}
-                  animate={{ opacity: 1, scale: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.5 }}
-                  transition={{ type: "spring", bounce: 0.3, duration: 0.6, delay: index * 0.05 }}
-                  className="snap-center snap-always shrink-0 flex flex-col items-center relative group w-24 md:w-28 mt-4"
-                >
-                   {/* Follower Rank Bubble */}
-                   <div className="absolute top-0 right-0 z-20 w-7 h-7 bg-black/60 backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center -mt-2 -mr-2 shadow-lg">
-                     <motion.span layoutId={`rank-${item.id}-${title}`} className="text-xs font-black text-white/80">{index + 2}</motion.span>
-                   </div>
-                   
-                   <motion.div layoutId={`image-${item.id}-${title}`} className="relative w-24 h-24 md:w-28 md:h-28 rounded-full overflow-hidden border border-white/10 group-hover:border-indigo-400/50 transition-all shadow-lg bg-indigo-950/30 group-hover:shadow-[0_0_30px_rgba(99,102,241,0.2)]">
-                     {item.imageUrl && (
-                        <Image 
-                          src={item.imageUrl} 
-                          alt={item.name} 
-                          fill 
-                          className="object-cover transition-transform duration-500 group-hover:scale-110 group-hover:rotate-2" 
-                          sizes="(max-width: 768px) 96px, 112px" 
-                        />
-                     )}
-                   </motion.div>
-                   
-                   <div className="mt-4 flex flex-col items-center text-center w-full px-1">
-                      <motion.span layoutId={`name-${item.id}-${title}`} className="text-sm font-semibold text-white/90 truncate w-full">{item.name}</motion.span>
-                      {item.artist && <motion.span layoutId={`artist-${item.id}-${title}`} className="text-[10px] text-white/40 uppercase tracking-wider truncate w-full mt-1">{item.artist}</motion.span>}
-                   </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+          {/* THE FOLLOWERS (#2 - 10 Bubble Grid) */}
+          <div className="flex-1 w-full relative">
+            <div className="grid grid-cols-3 gap-y-6 gap-x-2 pb-4 pt-2 px-2 items-start w-full">
+              {Array.from({ length: 9 }).map((_, index) => {
+                const item = followers[index]; // Could be undefined if loading
+
+                return (
+                  <div key={index} className="flex flex-col items-center w-full h-[120px]">
+                    <AnimatePresence mode="popLayout">
+                      {item && (
+                        <motion.div
+                          key={item.id}
+                          layoutId={`${item.id}-${title}`}
+                          initial={{ opacity: 0, scale: 0.5, y: 30 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.5, y: -20 }}
+                          transition={{ 
+                            type: "spring", stiffness: 280, damping: 20, 
+                            delay: index * 0.04 
+                          }}
+                          whileHover={{ y: -5, scale: 1.05 }}
+                          className="flex flex-col items-center relative group w-full cursor-pointer h-full"
+                        >
+                           {/* Follower Rank Bubble */}
+                           <div className="absolute top-0 right-1/2 z-20 w-6 h-6 bg-black/60 shadow-xl backdrop-blur-md border border-white/10 rounded-full flex items-center justify-center -translate-y-2 translate-x-8 md:translate-x-10">
+                             <motion.span layoutId={`rank-${item.id}-${title}`} className="text-[10px] font-black text-white/90">{index + 2}</motion.span>
+                           </div>
+                           
+                           <motion.div layoutId={`image-${item.id}-${title}`} className="relative w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden border border-white/10 group-hover:border-indigo-400/50 transition-colors shadow-lg bg-indigo-950/30 group-hover:shadow-[0_0_20px_rgba(99,102,241,0.3)]">
+                             {item.imageUrl && (
+                                <Image 
+                                  src={item.imageUrl} 
+                                  alt={item.name} 
+                                  fill 
+                                  className="object-cover" 
+                                  sizes="(max-width: 768px) 64px, 80px" 
+                                />
+                             )}
+                           </motion.div>
+                           
+                           <div className="mt-3 flex flex-col items-center text-center w-full px-1">
+                              <motion.span layoutId={`name-${item.id}-${title}`} className="text-[11px] md:text-xs font-semibold text-white/90 truncate w-full px-1 leading-tight">{item.name}</motion.span>
+                              {item.artist && <motion.span layoutId={`artist-${item.id}-${title}`} className="text-[9px] text-white/40 uppercase tracking-widest truncate w-full mt-0.5">{item.artist}</motion.span>}
+                           </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

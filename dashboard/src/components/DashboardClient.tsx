@@ -53,7 +53,7 @@ export default function DashboardClient({ lastListened, liveTopArtists, liveTopT
           <div className="mt-auto">
             <h3 className="text-2xl font-semibold text-white mb-1 line-clamp-2">{lastListened.track_name}</h3>
             <p className="text-indigo-100/70 text-lg">{lastListened.artist_name}</p>
-            <p className="text-xs text-white/30 mt-4">{new Date(lastListened.played_at).toLocaleString()}</p>
+            <p className="text-xs text-white/30 mt-4">{new Date(lastListened.played_at).toISOString().replace('T', ', ').substring(0, 19)}</p>
           </div>
         ) : (
           <p className="text-white/50 mt-auto">No history found.</p>
