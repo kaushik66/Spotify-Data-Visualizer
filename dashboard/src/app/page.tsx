@@ -1,16 +1,10 @@
 import { db } from "@/lib/db";
 import DashboardClient from "@/components/DashboardClient";
-import { getTopArtists, getTopTracks, getTopAlbums, getRecentlyPlayed } from "@/app/actions/spotify";
+import { getTopArtists, getTopTracks, getTopAlbums, getRecentlyPlayed, getLastPlayedTrack } from "@/app/actions/spotify";
 
 export default async function Home() {
-  // 1. Fetch Last Listened Track (for the small hero card)
-  const lastListened = db.prepare(`
-    SELECT t.track_name, t.artist_name, s.played_at 
-    FROM streaming_history s 
-    JOIN tracks t ON s.track_uri = t.track_uri 
-    ORDER BY s.played_at DESC 
-    LIMIT 1
-  `).get() as { track_name: string; artist_name: string; played_at: string } | undefined;
+  // 1. Fetch Last Listened Track (for the small hero card fallback)
+  const lastListened = await getLastPlayedTrack();
 
   // 2. Parallel fetch all Spotify-enriched data
   const [liveTopArtists, liveTopTracks, liveTopAlbums, recentlyPlayed] = await Promise.all([

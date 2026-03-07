@@ -4,7 +4,7 @@ import path from 'path';
 // Pointing to the real database in the root folder, read-only to be extremely safe.
 const dbPath = path.resolve(process.cwd(), '../spotify_intelligence.db');
 
-export const db = new Database(dbPath, { readonly: true });
+export const db = new Database(dbPath);
 
 // Types
 export interface Track {
